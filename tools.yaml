@@ -1,0 +1,49 @@
+sources:
+  my-pg-instance:
+    kind: alloydb-postgres
+    project: flowing-athlete-478809-b3  # <-- เช็คว่าชื่อ Project ตรงกับของคุณไหม
+    region: us-central1             # <-- เช็ค Region ด้วย
+    cluster: alloydb-aip-01    # <-- ชื่อ Cluster
+    instance: alloydb-aip-01-pr # <-- ชื่อ Instance
+    database: postgres        # <-- ชื่อ Database
+    user: postgres
+    password: postgres
+
+authServices:
+  my_google_service:
+    kind: google
+    clientId: 832318479212-t74dknde3sbqmfd76bau2cam1de1543r.apps.googleusercontent.com
+
+tools:
+  # --- New Tool for BCEL Products ---
+  search_products:
+    kind: postgres-sql
+    source: my-pg-instance
+    description: |
+      Use this tool to search for BCEL banking products and services based on user queries.
+      It uses semantic search to find relevant products by matching the description, name, or target audience.
+      Returns product details including name, description, type, status, and installation guide.
+    parameters:
+      - name: query
+        type: string
+        description: User's search query describing the product or service they are looking for (e.g., "how to pay with qr", "credit card details").
+    statement: |
+      SELECT product_id, product_name, description, type, status, audience, installation
+      FROM products
+      WHERE (embedding <=> embedding('text-embedding-004', $1)::vector) < 0.6
+      ORDER BY (embedding <=> embedding('text-embedding-004', $1)::vector)
+      LIMIT 5
+  execute_sql:
+    kind: postgres-sql
+    source: my-pg-instance  
+    description: Execute raw SQL statements for database initialization.
+    parameters:
+      - name: sql_query
+        type: string
+        description: The SQL query to execute.
+    statement: $1
+
+toolsets:
+  # --- Rename Toolset to 'bcel_products' ---
+  bcel_products:
+    - search_products

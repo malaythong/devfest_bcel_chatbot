@@ -1,0 +1,56 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: lint
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+  push:
+    branches:
+      - main
+      - demo
+    paths-ignore:
+      - "docs/**"
+
+# Declare default permissions as read only.
+permissions: read-all
+
+jobs:
+  integration:
+    name: Cymbal Air
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install requirements
+        run: pip install -r requirements.txt -r requirements-test.txt
+
+      - name: Run lints
+        run: |
+          black --check .
+          isort --check .
+          mypy .

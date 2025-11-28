@@ -1,0 +1,94 @@
+# Copyright 2024 Google LLC
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+steps:
+  # Step 1: Deploy BCEL App (Create temporary service)
+  - id: "Deploy BCEL App"
+    name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE}"             # ชื่อ Service จะเปลี่ยนไปຕາມ Build ID
+      - "--source"
+      - "."
+      - "--region"
+      - "${_REGION}"
+      - "--allow-unauthenticated" # ເປີດໃຫ້ເຂົ້າເຖິງໄດ້ (ເພື່ອທົດສອບ)
+      - "--set-env-vars"
+      - "TOOLBOX_URL=${_TOOLBOX_URL}"
+
+  # Step 2: Test the running App (Automated Test)
+  - id: "Test BCEL App"
+    name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: /bin/bash
+    args:
+      - -c
+      - |
+        # 1. ດຶງ URL ຂອງ Service ທີ່ຫາກໍ່ສ້າງ
+        export URL=$(gcloud run services describe ${_SERVICE} --region ${_REGION} --format 'value(status.url)')
+        export ID_TOKEN=$(gcloud auth print-identity-token)
+
+        echo "Starting tests on: $$URL"
+
+        # Test A: Ping ຫນ້າທຳອິດ (/)
+        # ຕ້ອງໄດ້ HTTP 200 OK
+        curl -si --fail --show-error -H "Authorization: Bearer $$ID_TOKEN" $$URL > /dev/null
+        if [ $? -eq 0 ]; then
+          echo "✅ Root Endpoint Test: PASSED"
+        else
+          echo "❌ Root Endpoint Test: FAILED"
+          exit 1
+        fi
+
+        # Test B: Ping ຫນ້າແຊທ (/chat)
+        # ຕ້ອງໄດ້ HTTP 400 (ເພາະເຮົາຍິງໄປໂດຍບໍ່ມີ Session Cookie)
+        # ນີ້ເປັນການເຊັກວ່າ Logic ໃນ app.py ເຮັດວຽກຖືກຕ້ອງ
+        msg=$(curl -si --show-error \
+          -X POST \
+          -H "Authorization: Bearer $$ID_TOKEN" \
+          -H 'Content-Type: application/json' \
+          -d '{"prompt":"Sabaidee"}' \
+          $$URL/chat)
+
+        if grep -q "400" <<< "$msg"; then
+          echo "✅ Chat Logic Test: PASSED (Correctly rejected session-less request)"
+        else
+          echo "❌ Chat Logic Test: FAILED"
+          echo "$msg"
+          exit 1
+        fi
+
+  # Step 3: Cleanup (Delete everything)
+  - id: "Delete BCEL App"
+    name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    script: |
+        #!/usr/bin/env bash
+        echo "🧹 Cleaning up resources..."
+        
+        # ລົບ Image ໃນ Container Registry
+        gcloud artifacts docker images delete $_GCR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_SERVICE --quiet || true
+        
+        # ລົບ Cloud Run Service
+        gcloud run services delete ${_SERVICE} --region ${_REGION} --quiet
+
+# ການຕັ້ງຄ່າຕົວແປ (Substitutions)
+substitutions:
+  _GCR_HOSTNAME: us-central1-docker.pkg.dev
+  _SERVICE: bcel-test-${BUILD_ID}   # ຕັ້ງຊື່ Service ໃຫ້ບໍ່ຊ້ຳກັນໃນແຕ່ລະຄັ້ງ
+  _REGION: us-central1
+  # ⚠️ ສຳຄັນ: ໃສ່ URL ຂອງ Toolbox ທີ່ທ່ານ Deploy ໄວ້ຖາວອນແລ້ວທີ່ນີ້
+  _TOOLBOX_URL: https://bcel-toolbox-xyz.a.run.app 
+
+options:
+  logging: CLOUD_LOGGING_ONLY
